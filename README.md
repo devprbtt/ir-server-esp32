@@ -24,8 +24,8 @@ ESP32 IR bridge with:
 - `/config/download`: download current config JSON.
 
 ## Versioning
-- Current firmware version: `0.2.0`
-- Current filesystem/UI version: `0.2.0`
+- Current firmware version: `0.3.0`
+- Current filesystem/UI version: `0.3.0`
 - The firmware exposes:
   - `firmware_version`
   - `filesystem_version`
@@ -553,7 +553,7 @@ These are used by the web UI rather than third-party automation, but they are pa
 ## Home Assistant
 - The Home Assistant custom integration now lives in its own repository: `https://github.com/devprbtt/ha-ir-server`.
 - The integration supports Zeroconf discovery once the custom component from `ha-ir-server` is installed in Home Assistant.
-- Firmware advertises `_hvactelnet._tcp.local.` over mDNS on the telnet port.
+- Firmware advertises `_irservertelnet._tcp.local.` over mDNS on the telnet port.
 - Install/update instructions live in that repository.
 - Climate entities are exposed as control entities.
 - Custom profile commands are exposed as button entities.

@@ -363,6 +363,11 @@ void startMdns() {
     return;
   }
   MDNS.addService("http", "tcp", 80);
+  MDNS.addService("irservertelnet", "tcp", config.telnetPort);
+  MDNS.addServiceTxt("irservertelnet", "tcp", "domain", "ir_server_telnet");
+  MDNS.addServiceTxt("irservertelnet", "tcp", "board", "ir-server-telnet");
+  MDNS.addServiceTxt("irservertelnet", "tcp", "hostname", host);
+  // Keep the legacy service during the migration from the old hvactelnet domain.
   MDNS.addService("hvactelnet", "tcp", config.telnetPort);
   MDNS.addServiceTxt("hvactelnet", "tcp", "domain", "hvactelnet");
   MDNS.addServiceTxt("hvactelnet", "tcp", "board", "ir-server-telnet");
