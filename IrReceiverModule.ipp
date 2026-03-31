@@ -136,7 +136,6 @@ void handleIrLearnStart() {
     doc["ok"] = true;
     doc["active"] = true;
     doc["encoding"] = irLearnEncoding;
-    if (telnetMonitorEnabled && monitorLogIrEnabled) addMonitorLogEntry("ir-learn start encoding=" + irLearnEncoding);
   }
   String out;
   serializeJson(doc, out);
@@ -227,13 +226,11 @@ void handleIrReceiver() {
       irLearnCode = learned;
       irLearnActive = false;
       irLearnError = "";
-      if (telnetMonitorEnabled && monitorLogIrEnabled) addMonitorLogEntry("ir-learn captured encoding=" + targetEnc);
     }
   }
 
   if (irReceiverCapture.overflow) line += " overflow=1";
   Serial.println(truncateForLog(line));
-  if (telnetMonitorEnabled && monitorLogIrEnabled) addMonitorLogEntry(line);
 
   irReceiver->resume();
 }

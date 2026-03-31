@@ -32,7 +32,6 @@ static const uint8_t kMaxHvacs = 32;
 static const uint8_t kMaxCustomTemps = 16;
 static const uint8_t kMaxCustomCommands = 16;
 static const uint16_t kDefaultTelnetPort = 4998;
-static const uint16_t kMonitorLogCapacity = 40;
 static const uint16_t kDinplugPort = 23;
 static const unsigned long kDinplugReconnectIntervalMs = 5000;
 static const unsigned long kDinplugKeepAliveIntervalMs = 10000;
@@ -50,8 +49,8 @@ static const uint8_t kDiagnosticsLogLines = 20;
 static const unsigned long kDiagnosticsPersistDebounceMs = 10000UL;
 static const uint8_t kTrendHistoryCapacity = 24;
 static const unsigned long kTrendSampleIntervalMs = 60000UL;
-static const char *kFirmwareVersion = "0.3.0";
-static const char *kFilesystemVersionExpected = "0.3.0";
+static const char *kFirmwareVersion = "0.4.0";
+static const char *kFilesystemVersionExpected = "0.4.0";
 
 static const char *kConfigPath = "/config.json";
 static const char *kHvacStatePath = "/hvac_state.json";
@@ -212,16 +211,9 @@ unsigned long dinplugLastRxMs = 0;
 DNSServer dnsServer;
 bool dnsServerActive = false;
 Preferences preferences;
-bool telnetMonitorEnabled = true;
-bool monitorLogTelnetEnabled = true;
-bool monitorLogStateEnabled = true;
-bool monitorLogDinplugEnabled = true;
-bool monitorLogIrEnabled = true;
-String serialConsoleBuffer;
-String telnetMonitorLog[kMonitorLogCapacity];
-uint16_t telnetMonitorLogStart = 0;
-uint16_t telnetMonitorLogCount = 0;
 DinplugButtonBinding dinplugBindingPool[kMaxDinplugBindingsTotal];
+DinplugButtonBinding dinplugBindingScratch[kMaxDinplugBindingsTotal];
+DinplugButtonBinding dinplugBindingPoolScratch[kMaxDinplugBindingsTotal];
 uint8_t dinplugBindingCount = 0;
 OneWire *tempOneWire = nullptr;
 DallasTemperature *tempBus = nullptr;
@@ -1003,12 +995,9 @@ void setup() {
   }
   sampleRuntimeTrends(true);
   savePersistedDiagnostics();
-  printMonitorStatus();
-  Serial.println("monitor: use 'monitor on|off|status' via serial terminal");
 }
 
 void loop() {
-  handleSerialConsole();
   web.handleClient();
   handleTelnet();
   handleTelnetPeriodicStateBroadcast();

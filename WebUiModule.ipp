@@ -99,7 +99,7 @@ String pageHeader(const String &title) {
   html += ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}";
   html += ".pill{display:inline-block;background:#1e293b;color:#e2e8f0;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:6px;}";
   html += "</style></head><body><div class='wrap'>";
-  html += "<nav><a href='/'>Home</a><a href='/config'>Config</a><a href='/emitters'>Emitters</a><a href='/devices'>Devices</a><a href='/devices/test'>Test Device</a><a href='/dinplug'>DINplug</a><a href='/system#monitor'>Monitor</a><a href='/system#firmware'>Firmware</a><a href='/system#backup'>Upload</a><a href='/config/download'>Download</a></nav>";
+  html += "<nav><a href='/'>Home</a><a href='/config'>Config</a><a href='/emitters'>Emitters</a><a href='/devices'>Devices</a><a href='/devices/test'>Test Device</a><a href='/dinplug'>DINplug</a><a href='/system'>System</a><a href='/system#firmware'>Firmware</a><a href='/system#backup'>Upload</a><a href='/config/download'>Download</a></nav>";
   return html;
 }
 
@@ -462,14 +462,13 @@ void handleHvacsUpdate() {
   String keypadCsv = web.arg("din_keypad_ids");
   if (keypadCsv.length() == 0) keypadCsv = web.arg("din_keypad_id");
   parseDinKeypadsCsv(keypadCsv, h);
-  DinplugButtonBinding nextBindings[kMaxDinplugBindingsTotal];
   uint8_t nextBindingCount = 0;
   for (uint8_t i = 0; i < kMaxDinplugBindingsTotal; i++) {
     String base = "btn" + String(i) + "_";
     uint16_t keypadId = web.arg(base + "keypad_id").toInt();
     uint16_t btnId = web.arg(base + "id").toInt();
     if (btnId == 0) continue;
-    DinplugButtonBinding &b = nextBindings[nextBindingCount++];
+    DinplugButtonBinding &b = dinplugBindingScratch[nextBindingCount++];
     b.keypadId = keypadId;
     b.buttonId = btnId;
     b.pressAction = web.arg(base + "press_action");
@@ -504,7 +503,7 @@ void handleHvacsUpdate() {
     }
     if (nextBindingCount >= kMaxDinplugBindingsTotal) break;
   }
-  if (!setHvacDinplugBindings(static_cast<uint8_t>(idx), nextBindings, nextBindingCount)) {
+  if (!setHvacDinplugBindings(static_cast<uint8_t>(idx), dinplugBindingScratch, nextBindingCount)) {
     web.send(400, "text/plain", "Too many DINplug bindings in use");
     return;
   }
@@ -624,8 +623,6 @@ void handleApiConfigSave() {
   ESP.restart();
 }
 
-void handleMonitorPage() { sendSpiffsFallbackPage("Monitor", "/system.html"); }
-
 bool isApPortalMode() {
   wifi_mode_t mode = WiFi.getMode();
   return (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA);
@@ -697,15 +694,7 @@ void setupWeb() {
   web.on("/dinplug/save", HTTP_POST, handleDinplugSave);
   web.on("/dinplug/test", HTTP_POST, handleDinplugTest);
   web.on("/raw/test", HTTP_POST, handleRawTest);
-  web.on("/monitor", HTTP_GET, []() {
-    if (!checkAuth()) { requestAuth(); return; }
-    web.sendHeader("Location", "/system#monitor", true);
-    web.send(302, "text/plain", "");
-  });
-  web.on("/api/monitor", HTTP_GET, handleApiMonitor);
   web.on("/api/diagnostics", HTTP_GET, handleApiDiagnostics);
-  web.on("/monitor/clear", HTTP_POST, handleMonitorClear);
-  web.on("/monitor/toggle", HTTP_POST, handleMonitorToggle);
   web.on("/api/ir/learn/start", HTTP_POST, handleIrLearnStart);
   web.on("/api/ir/learn/poll", HTTP_GET, handleIrLearnPoll);
   web.on("/api/ir/learn/cancel", HTTP_POST, handleIrLearnCancel);

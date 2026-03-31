@@ -21,7 +21,6 @@ bool setHvacDinplugBindings(uint8_t hvacIndex, const DinplugButtonBinding *bindi
   if (hvacIndex >= config.hvacCount) return false;
   if (count > kMaxDinplugBindingsTotal) return false;
 
-  DinplugButtonBinding nextPool[kMaxDinplugBindingsTotal];
   uint8_t nextCount = 0;
 
   for (uint8_t i = 0; i < config.hvacCount; i++) {
@@ -31,24 +30,23 @@ bool setHvacDinplugBindings(uint8_t hvacIndex, const DinplugButtonBinding *bindi
     h.dinButtonStart = nextCount;
     if (i == hvacIndex) {
       if ((nextCount + count) > kMaxDinplugBindingsTotal) return false;
-      for (uint8_t j = 0; j < count; j++) nextPool[nextCount + j] = bindings[j];
+      for (uint8_t j = 0; j < count; j++) dinplugBindingPoolScratch[nextCount + j] = bindings[j];
       h.dinButtonCount = count;
       nextCount += count;
       continue;
     }
     if ((nextCount + oldCount) > kMaxDinplugBindingsTotal) return false;
-    for (uint8_t j = 0; j < oldCount; j++) nextPool[nextCount + j] = dinplugBindingPool[oldStart + j];
+    for (uint8_t j = 0; j < oldCount; j++) dinplugBindingPoolScratch[nextCount + j] = dinplugBindingPool[oldStart + j];
     h.dinButtonCount = oldCount;
     nextCount += oldCount;
   }
 
-  for (uint8_t i = 0; i < nextCount; i++) dinplugBindingPool[i] = nextPool[i];
+  for (uint8_t i = 0; i < nextCount; i++) dinplugBindingPool[i] = dinplugBindingPoolScratch[i];
   dinplugBindingCount = nextCount;
   return true;
 }
 
 void compactDinplugBindingPool() {
-  DinplugButtonBinding nextPool[kMaxDinplugBindingsTotal];
   uint8_t nextCount = 0;
   for (uint8_t i = 0; i < config.hvacCount; i++) {
     HvacConfig &h = config.hvacs[i];
@@ -56,10 +54,10 @@ void compactDinplugBindingPool() {
     const uint8_t oldCount = h.dinButtonCount;
     h.dinButtonStart = nextCount;
     for (uint8_t j = 0; j < oldCount && nextCount < kMaxDinplugBindingsTotal; j++) {
-      nextPool[nextCount++] = dinplugBindingPool[oldStart + j];
+      dinplugBindingPoolScratch[nextCount++] = dinplugBindingPool[oldStart + j];
     }
   }
-  for (uint8_t i = 0; i < nextCount; i++) dinplugBindingPool[i] = nextPool[i];
+  for (uint8_t i = 0; i < nextCount; i++) dinplugBindingPool[i] = dinplugBindingPoolScratch[i];
   dinplugBindingCount = nextCount;
 }
 
@@ -248,10 +246,8 @@ bool sendDinplugCommand(const String &cmd) {
     dinplugConnected = false;
     dinplugWasConnected = false;
     Serial.println("dinplug: tx failed, reconnecting");
-    if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din: tx failed, reconnecting");
     return false;
   }
-  if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din-tx " + cmd);
   return true;
 }
 
@@ -303,7 +299,6 @@ void ensureDinplugConnected(bool forceNow) {
     dinplugLastKeepAliveMs = millis();
     dinplugLastRxMs = millis();
     Serial.println("dinplug: connected");
-    if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din: connected");
     sendDinplugCommand("REFRESH");
   } else {
     Serial.println("dinplug: connect failed");
@@ -331,7 +326,6 @@ void processDinplugLine(const String &line) {
   String trimmed = line;
   trimmed.trim();
   dinplugLastRxMs = millis();
-  if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din-rx " + trimmed);
   if (!trimmed.startsWith("R:BTN ")) return;
   int firstSpace = trimmed.indexOf(' ');
   int secondSpace = trimmed.indexOf(' ', firstSpace + 1);
@@ -353,7 +347,6 @@ void handleDinplug() {
     dinplugWasConnected = false;
     dinplugConnected = false;
     Serial.println("dinplug: disconnected");
-    if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din: disconnected");
   }
   if (!dinplugClient.connected()) return;
   unsigned long now = millis();
@@ -366,7 +359,6 @@ void handleDinplug() {
   }
   if (dinplugLastRxMs > 0 && (now - dinplugLastRxMs) > kDinplugRxTimeoutMs) {
     Serial.println("dinplug: rx timeout, reconnecting");
-    if (telnetMonitorEnabled && monitorLogDinplugEnabled) addMonitorLogEntry("din: rx timeout, reconnecting");
     dinplugClient.stop();
     dinplugConnected = false;
     dinplugWasConnected = false;

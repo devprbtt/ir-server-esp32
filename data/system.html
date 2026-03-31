@@ -407,41 +407,14 @@
   <div class="container">
     <header class="header">
       <h1>System</h1>
-      <p>Monitor, firmware updates, and backup</p>
+      <p>Stats, firmware updates, diagnostics, and backup</p>
     </header>
 
     <div class="tabs">
-      <button class="tab" data-tab="monitor">Monitor</button>
       <button class="tab active" data-tab="stats">Stats</button>
       <button class="tab" data-tab="api">API</button>
       <button class="tab" data-tab="firmware">Firmware</button>
       <button class="tab" data-tab="backup">Backup</button>
-    </div>
-
-    <!-- MONITOR TAB -->
-    <div id="tab-monitor" class="tab-content">
-      <div class="card">
-        <h3 class="card-title">Live Log</h3>
-        <div class="row">
-          <div class="status-pill"><span id="dot" class="status-dot"></span><span id="mon_state">Loading...</span></div>
-          <button class="btn-outline btn-sm" type="button" id="refresh_btn">Refresh</button>
-          <button class="btn-secondary btn-sm" type="button" id="toggle_btn">Toggle</button>
-          <button class="btn-outline btn-sm" type="button" id="clear_btn">Clear</button>
-        </div>
-        <div class="filters">
-          <label class="filter-chip"><input id="filter_telnet" type="checkbox"><span>Telnet</span></label>
-          <label class="filter-chip"><input id="filter_state" type="checkbox"><span>State</span></label>
-          <label class="filter-chip"><input id="filter_dinplug" type="checkbox"><span>DINplug</span></label>
-          <label class="filter-chip"><input id="filter_ir" type="checkbox"><span>IR</span></label>
-        </div>
-        <div id="log_box" class="terminal">Monitor is idle. Open this tab and click Refresh if you want to load the log.</div>
-        <div class="row" style="margin-top:12px;">
-          <button class="btn-outline btn-sm" type="button" id="copy_logs_btn">Copy Recent Logs</button>
-          <button class="btn-outline btn-sm" type="button" id="copy_last_btn">Copy Last IR</button>
-          <button class="btn-outline btn-sm" type="button" id="copy_all_btn">Copy All IR</button>
-        </div>
-        <div class="status" id="mon_status">Ready</div>
-      </div>
     </div>
 
     <!-- STATS TAB -->
@@ -473,7 +446,7 @@
         <div class="api-grid">
           <div class="api-section">
             <h4>Overview</h4>
-            <p>IR Server Telnet exposes two integration paths: a telnet JSON command socket for runtime control and a small HTTP API for configuration, status, diagnostics, monitor, and IR learning.</p>
+            <p>IR Server Telnet exposes two integration paths: a telnet JSON command socket for runtime control and a small HTTP API for configuration, status, diagnostics, and IR learning.</p>
             <div>
               <span class="api-endpoint">TELNET :4998</span>
               <span class="api-endpoint">HTTP /api/*</span>
@@ -511,7 +484,6 @@
               <li><code>GET /api/meta</code>: UI metadata, capabilities, and limits</li>
               <li><code>GET /api/config</code>: current saved configuration JSON</li>
               <li><code>POST /api/config/save</code>: replace saved configuration JSON</li>
-              <li><code>GET /api/monitor?limit=20</code>: recent monitor lines and category filter state</li>
               <li><code>GET /api/diagnostics</code>: latest persisted diagnostics snapshot with trend history</li>
               <li><code>GET /api/wifi/scan</code>: available WiFi networks</li>
             </ul>
@@ -520,7 +492,6 @@
 curl http://ir-server.local/api/device/get_all
 curl http://ir-server.local/api/meta
 curl http://ir-server.local/api/config
-curl http://ir-server.local/api/monitor?limit=20
 curl http://ir-server.local/api/diagnostics
 curl http://ir-server.local/api/wifi/scan
 curl -X POST http://ir-server.local/api/config/save \
@@ -592,7 +563,6 @@ curl -X POST http://ir-server.local/api/device/raw \
                 <option value="/api/status">GET /api/status</option>
                 <option value="/api/meta">GET /api/meta</option>
                 <option value="/api/config">GET /api/config</option>
-                <option value="/api/monitor?limit=20">GET /api/monitor?limit=20</option>
                 <option value="/api/diagnostics">GET /api/diagnostics</option>
                 <option value="/api/wifi/scan">GET /api/wifi/scan</option>
               </select>
@@ -671,13 +641,8 @@ curl -X POST http://ir-server.local/api/device/raw \
   <script>
     const J = (u, o) => fetch(u, o).then(r => r.json());
     const byId = id => document.getElementById(id);
-    let lines = [];
-    let enabled = false;
-    let filters = { telnet: true, state: true, dinplug: true, ir: true };
-    let monitorPollTimer = null;
     let statsPollTimer = null;
     let activeTabName = 'stats';
-    let monitorLoadedOnce = false;
 
     // Tab switching
     function setActiveTab(tabName) {
@@ -692,7 +657,6 @@ curl -X POST http://ir-server.local/api/device/raw \
       if (location.hash !== '#' + tabName) {
         history.replaceState(null, '', '#' + tabName);
       }
-      syncMonitorPolling();
       syncStatsPolling();
     }
 
@@ -772,24 +736,6 @@ curl -X POST http://ir-server.local/api/device/raw \
     });
     window.addEventListener('hashchange', loadTabFromLocation);
 
-    // Monitor functions
-    function irCodes() {
-      return lines.filter(l => l.includes('ir-rx ')).map(l => l.slice(l.indexOf('ir-rx ') + 6));
-    }
-
-    async function copyText(text) {
-      if (!text) {
-        byId('mon_status').textContent = 'No IR code available.';
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(text);
-        byId('mon_status').textContent = 'Copied to clipboard.';
-      } catch (_e) {
-        byId('mon_status').textContent = 'Clipboard copy failed.';
-      }
-    }
-
     async function copyApiBlock(targetId, button) {
       const block = byId(targetId);
       if (!block) return;
@@ -826,88 +772,7 @@ curl -X POST http://ir-server.local/api/device/raw \
       }
     }
 
-    async function loadMonitor() {
-      monitorLoadedOnce = true;
-      const d = await J('/api/monitor?limit=20');
-      enabled = !!d.enabled;
-      filters = { ...filters, ...(d.filters || {}) };
-      lines = d.lines || [];
-      byId('mon_state').textContent = enabled ? 'Monitor enabled' : 'Monitor disabled';
-      byId('dot').classList.toggle('active', enabled);
-      byId('filter_telnet').checked = !!filters.telnet;
-      byId('filter_state').checked = !!filters.state;
-      byId('filter_dinplug').checked = !!filters.dinplug;
-      byId('filter_ir').checked = !!filters.ir;
-      const log = byId('log_box');
-      log.textContent = lines.join('\n');
-      log.scrollTop = log.scrollHeight;
-    }
-
-    function stopMonitorPolling() {
-      if (monitorPollTimer !== null) {
-        clearInterval(monitorPollTimer);
-        monitorPollTimer = null;
-      }
-    }
-
-    function syncMonitorPolling() {
-      stopMonitorPolling();
-      if (activeTabName !== 'monitor' || document.hidden || !monitorLoadedOnce || !enabled) return;
-      monitorPollTimer = setInterval(() => {
-        loadMonitor().catch(e => byId('mon_status').textContent = 'Refresh failed: ' + e);
-      }, 3000);
-    }
-
-    async function saveMonitorFilters(nextEnabled = enabled) {
-      const body = new URLSearchParams({
-        enabled: nextEnabled ? '1' : '0',
-        telnet: byId('filter_telnet').checked ? '1' : '0',
-        state: byId('filter_state').checked ? '1' : '0',
-        dinplug: byId('filter_dinplug').checked ? '1' : '0',
-        ir: byId('filter_ir').checked ? '1' : '0'
-      });
-      await fetch('/monitor/toggle', { method: 'POST', body });
-      await loadMonitor();
-    }
-
-    async function clearMonitor() {
-      await fetch('/monitor/clear', { method: 'POST' });
-      await loadMonitor();
-      byId('mon_status').textContent = 'Log cleared.';
-    }
-
-    byId('toggle_btn').addEventListener('click', () => saveMonitorFilters(!enabled).catch(e => byId('mon_status').textContent = 'Toggle failed: ' + e));
-    byId('refresh_btn').addEventListener('click', () => loadMonitor().then(() => {
-      byId('mon_status').textContent = 'Monitor refreshed.';
-      syncMonitorPolling();
-    }).catch(e => byId('mon_status').textContent = 'Refresh failed: ' + e));
-    byId('clear_btn').addEventListener('click', () => clearMonitor().catch(e => byId('mon_status').textContent = 'Clear failed: ' + e));
-    ['filter_telnet', 'filter_state', 'filter_dinplug', 'filter_ir'].forEach((id) => {
-      byId(id).addEventListener('change', () => saveMonitorFilters(enabled).catch(e => byId('mon_status').textContent = 'Filter update failed: ' + e));
-    });
-    byId('copy_last_btn').addEventListener('click', () => {
-      const codes = irCodes();
-      copyText(codes.length ? codes[codes.length - 1] : '');
-    });
-    byId('copy_logs_btn').addEventListener('click', () => {
-      const text = byId('log_box').textContent || '';
-      if (!text.trim() || text.includes('Monitor is idle.')) {
-        byId('mon_status').textContent = 'No recent logs available.';
-        return;
-      }
-      navigator.clipboard.writeText(text).then(() => {
-        byId('mon_status').textContent = 'Recent logs copied to clipboard.';
-      }).catch(() => {
-        byId('mon_status').textContent = 'Clipboard copy failed.';
-      });
-    });
-    byId('copy_all_btn').addEventListener('click', () => {
-      const codes = irCodes();
-      copyText(codes.join('\n'));
-    });
-
     document.addEventListener('visibilitychange', () => {
-      syncMonitorPolling();
       syncStatsPolling();
     });
     document.querySelectorAll('.api-copy-btn').forEach((button) => {

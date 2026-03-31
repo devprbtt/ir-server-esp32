@@ -11,11 +11,6 @@ struct TrendSample {
   uint8_t telnetClients = 0;
 };
 
-void printMonitorStatus();
-void handleSerialConsole();
-void addMonitorLogEntry(const String &line);
-void clearMonitorLog();
-bool monitorCategoryEnabled(const String &category);
 void markDiagnosticsDirty();
 void savePersistedDiagnostics();
 void handleDiagnosticsPersistence();

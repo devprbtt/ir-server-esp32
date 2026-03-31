@@ -1,12 +1,7 @@
 void logHvacStateChange(const String &id, const HvacRuntimeState &after, int8_t sourceTelnetSlot) {
-  if (!telnetMonitorEnabled) return;
-  if (!monitorLogStateEnabled) return;
-  if (sourceTelnetSlot >= 0) return;
-  JsonDocument msg;
-  writeStateJson(msg.to<JsonObject>(), id, after);
-  String payload;
-  serializeJson(msg, payload);
-  addMonitorLogEntry("TX state " + payload);
+  (void)id;
+  (void)after;
+  (void)sourceTelnetSlot;
 }
 
 void writeStateJson(JsonObject state, const String &id, const HvacRuntimeState &hvacState) {
@@ -81,9 +76,6 @@ void handleTelnetPeriodicStateBroadcast() {
     WiFiClient &c = telnetClients[i];
     if (!c || !c.connected()) continue;
     sendAllStatesToTelnetClient(c);
-  }
-  if (telnetMonitorEnabled && monitorLogTelnetEnabled) {
-    addMonitorLogEntry("TX periodic_state_broadcast clients=" + String(activeTelnetClientCount()));
   }
 }
 
@@ -195,20 +187,14 @@ void respondTelnetError(WiFiClient &client, const String &message) {
 }
 
 void handleTelnetLine(WiFiClient &client, const String &line, int8_t sourceTelnetSlot) {
-  if (telnetMonitorEnabled && monitorLogTelnetEnabled) {
-    String rxMsg = "RX slot=" + String(sourceTelnetSlot) + " from " +
-                   client.remoteIP().toString() + ":" + String(client.remotePort()) +
-                   " line=" + line;
-    addMonitorLogEntry(rxMsg);
-    Serial.println(truncateForLog("telnet-" + rxMsg, 280));
-  }
+  String rxMsg = "RX slot=" + String(sourceTelnetSlot) + " from " +
+                 client.remoteIP().toString() + ":" + String(client.remotePort()) +
+                 " line=" + line;
+  Serial.println(truncateForLog("telnet-" + rxMsg, 280));
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line);
   if (err) {
-    if (telnetMonitorEnabled && monitorLogTelnetEnabled) {
-      addMonitorLogEntry("RX parse=invalid_json");
-      Serial.println("telnet-rx parse=invalid_json");
-    }
+    Serial.println("telnet-rx parse=invalid_json");
     respondTelnetError(client, "invalid_json");
     return;
   }
@@ -220,16 +206,10 @@ void handleTelnetLine(WiFiClient &client, const String &line, int8_t sourceTelne
     Serial.println(sourceTelnetSlot);
     return;
   }
-  if (telnetMonitorEnabled && monitorLogTelnetEnabled) {
-    String respStr;
-    serializeJson(resp, respStr);
-    String txMsg = "TX slot=" + String(sourceTelnetSlot) + " cmd=" + cmd + " line=" + respStr;
-    addMonitorLogEntry(txMsg);
-    Serial.println(truncateForLog("telnet-" + txMsg, 280));
-  } else {
-    Serial.print("telnet: ");
-    Serial.println(cmd);
-  }
+  String respStr;
+  serializeJson(resp, respStr);
+  String txMsg = "TX slot=" + String(sourceTelnetSlot) + " cmd=" + cmd + " line=" + respStr;
+  Serial.println(truncateForLog("telnet-" + txMsg, 280));
 }
 
 void handleTelnet() {

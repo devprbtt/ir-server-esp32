@@ -20,12 +20,12 @@ ESP32 IR bridge with:
 - `/devices/test`: send test commands for standard HVAC and custom device profiles.
 - `/raw/test` (from Test page): send ad-hoc raw code (`pronto`, `gc`, `racepoint`, `rawhex`).
 - `/dinplug`: DINplug gateway config + test.
-- `/system`: Monitor, live stats, API reference, firmware updates, and config backup/restore in one page.
+- `/system`: live stats, API reference, firmware updates, diagnostics download, and config backup/restore in one page.
 - `/config/download`: download current config JSON.
 
 ## Versioning
-- Current firmware version: `0.3.0`
-- Current filesystem/UI version: `0.3.0`
+- Current firmware version: `0.4.0`
+- Current filesystem/UI version: `0.4.0`
 - The firmware exposes:
   - `firmware_version`
   - `filesystem_version`
@@ -207,7 +207,6 @@ Returned fields include:
 - `eth_last_link_up_ms`
 - `wifi_mode_raw`
 - `wifi_rssi`
-- `monitor_logging_enabled`
 - `time_synced`
 - `local_time`
 
@@ -402,64 +401,6 @@ curl -X POST http://ir-server.local/api/config/save \
   --data @config.json
 ```
 
-### Monitor API
-Live monitor logging is enabled again in this build, but the retained history is intentionally shorter.
-
-`GET /api/monitor` returns the current enabled state, category filters, and the most recent retained lines.
-
-Returned fields:
-- `enabled`
-- `filters.telnet`
-- `filters.state`
-- `filters.dinplug`
-- `filters.ir`
-- `lines`
-
-Example:
-```json
-{
-  "enabled": true,
-  "filters": {
-    "telnet": true,
-    "state": true,
-    "dinplug": true,
-    "ir": false
-  },
-  "lines": [
-    "[2026-03-25 11:59:00] [123456 ms] wifi: reconnected ip=192.168.51.10"
-  ]
-}
-```
-
-Set monitor enabled state and category filters:
-- `POST /monitor/toggle`
-- form body fields:
-  - `enabled=0|1`
-  - `telnet=0|1`
-  - `state=0|1`
-  - `dinplug=0|1`
-  - `ir=0|1`
-
-Current behavior:
-- returns `ok: true` and applies the requested enabled state and category filters
-
-Response:
-```json
-{
-  "ok": true,
-  "enabled": true,
-  "filters": {
-    "telnet": true,
-    "state": true,
-    "dinplug": false,
-    "ir": false
-  }
-}
-```
-
-Clear the in-memory monitor log:
-- `POST /monitor/clear`
-
 ### Persisted diagnostics
 Get the latest persisted diagnostics snapshot:
 - `GET /api/diagnostics`
@@ -547,7 +488,6 @@ These are used by the web UI rather than third-party automation, but they are pa
 - `GET /api/device/get` and `GET /api/device/get_all` return the same state objects used by the telnet API.
 - `POST /api/device/send` and `POST /api/device/raw` reuse the same backend logic as telnet commands.
 - `POST /api/config/save` replaces the full config; it is not a partial patch endpoint.
-- `/api/monitor` is read-only; use `/monitor/toggle` and `/monitor/clear` to manage monitor behavior.
 - The web UI in `/system#api` includes copyable examples and a read-only API tester for safe endpoints.
 
 ## Home Assistant

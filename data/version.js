@@ -1,4 +1,4 @@
-window.IR_SERVER_UI_FS_VERSION = "0.3.0";
+window.IR_SERVER_UI_FS_VERSION = "0.4.0";
 
 (function () {
   function injectStyles() {

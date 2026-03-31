@@ -100,6 +100,7 @@ String configToJsonString() {
   }
 
   String out;
+  out.reserve(measureJson(doc) + 1);
   serializeJson(doc, out);
   return out;
 }
@@ -417,7 +418,6 @@ void clearPersistedData() {
   initHvacRuntimeStates();
   hvacStatesDirty = false;
   hvacStatesDirtySinceMs = 0;
-  clearMonitorLog();
 }
 
 void loadConfig() {

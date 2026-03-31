@@ -113,6 +113,156 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .device-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 210px;
+    }
+    .device-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .device-card-title {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .device-card-subtitle {
+      margin: 3px 0 0;
+      color: var(--text-muted);
+      font-size: 0.74rem;
+    }
+    .state-pill {
+      flex-shrink: 0;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .state-pill.on {
+      background: rgba(34, 197, 94, 0.18);
+      color: #8ff0ad;
+    }
+    .state-pill.off {
+      background: rgba(122, 138, 157, 0.14);
+      color: #b8c4d1;
+    }
+    .device-hero {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .hero-metric {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+    }
+    .hero-metric label {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .hero-metric strong {
+      font-size: 1.05rem;
+      line-height: 1.1;
+    }
+    .device-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 12px;
+    }
+    .device-meta-item label {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+    .device-meta-item span {
+      font-size: 0.82rem;
+      word-break: break-word;
+    }
+    .device-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .device-card-footer a {
+      text-decoration: none;
+    }
+    .device-controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .control-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .control-field label {
+      color: var(--text-muted);
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .control-field select,
+    .control-field input {
+      padding: 10px 11px;
+      font-size: 0.8rem;
+      background: rgba(255,255,255,0.03);
+    }
+    .device-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .device-actions .btn-sm {
+      width: auto;
+    }
+    .apply-btn {
+      background: var(--primary);
+      color: #fff;
+    }
+    .apply-btn[disabled] {
+      opacity: 0.7;
+      cursor: progress;
+    }
+    .card-note {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+    }
+    .dashboard-inline-status {
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      text-align: right;
+      min-height: 1.1em;
+    }
+
     /* Cards and Forms */
     .card {
       background: var(--surface);
@@ -329,6 +479,9 @@
     @media (max-width: 640px) {
       .form-grid, .form-grid.cols-3, .form-grid.cols-4 { grid-template-columns: 1fr; }
       .cmd-row { grid-template-columns: 1fr; }
+      .device-controls { grid-template-columns: 1fr; }
+      .device-card-footer { align-items: flex-start; flex-direction: column; }
+      .dashboard-inline-status { text-align: left; }
     }
   </style>
 </head>
@@ -341,6 +494,7 @@
 
     <div class="tabs">
       <button class="tab active" data-tab="list">List</button>
+      <button class="tab" data-tab="dashboard">Dashboard</button>
       <button class="tab" data-tab="emitters">Emitters</button>
       <button class="tab" data-tab="add">Add</button>
       <button class="tab" data-tab="edit">Edit</button>
@@ -358,6 +512,16 @@
         </div>
       </div>
       <div class="status" id="status_list">Ready</div>
+    </div>
+
+    <div id="tab-dashboard" class="tab-content">
+      <div class="card">
+        <h3 class="card-title">Live Device Dashboard</h3>
+        <div id="dashboard_grid" class="dashboard-grid">
+          <div class="status">Loading device cards...</div>
+        </div>
+      </div>
+      <div class="status" id="status_dashboard">Refreshes automatically while this tab is open.</div>
     </div>
 
     <div id="tab-emitters" class="tab-content">
@@ -536,7 +700,9 @@
     const LIGHTMODES = ["keep","on","off","toggle"];
     const ACTIONS_WITH_VALUE = new Set(["temp_up","temp_down","set_temp"]);
     let cfg, meta, status;
+    let hvacStateMap = {};
     let activeTab = 'list';
+    let dashboardPollTimer = null;
     const commandEditorState = { add: 1, edit: 1 };
     let activeLearnCancel = null;
 
@@ -545,6 +711,7 @@
       activeTab = name;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+      syncDashboardPolling();
     }
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => setActiveTab(tab.dataset.tab));
@@ -571,6 +738,163 @@
         const label = `${s.name || ('Sensor ' + s.index)} (idx ${s.index}, ${temp})`;
         return `<option value="${s.index}"${String(s.index) === String(selected) ? ' selected' : ''}>${label}</option>`;
       }).join('');
+    }
+    function stateForHvac(h) {
+      return hvacStateMap?.[String(h?.id || '')] || null;
+    }
+    function dashboardModeLabel(mode) {
+      const value = String(mode || '').trim();
+      return value ? value.replace(/_/g, ' ') : '-';
+    }
+    function dashboardTempLabel(value) {
+      const num = Number(value);
+      return Number.isFinite(num) ? `${num.toFixed(1)}C` : '-';
+    }
+    function dashboardCardHtml(h, index) {
+      const state = stateForHvac(h);
+      const profile = hvacProfileName(h) || `Device ${h.id}`;
+      const protocol = h.protocol || '-';
+      const powerOn = String(state?.power || '').toLowerCase() === 'on';
+      const mode = String(state?.mode || 'auto').toLowerCase();
+      const fan = String(state?.fan || 'auto').toLowerCase();
+      const setpoint = Number.isFinite(Number(state?.setpoint)) ? Number(state.setpoint) : 24;
+      const lightRaw = String(state?.light || '').toLowerCase();
+      const light = lightRaw === 'on' || lightRaw === 'true' ? 'true' : lightRaw === 'off' || lightRaw === 'false' ? 'false' : '';
+      const summary = `Emitter ${h.emitter}`;
+      return `<article class="device-card">
+        <div class="device-card-header">
+          <div>
+            <h4 class="device-card-title">${profile}</h4>
+            <p class="device-card-subtitle">ID ${h.id} • ${protocol}</p>
+          </div>
+          <span class="state-pill ${powerOn ? 'on' : 'off'}">${powerOn ? 'On' : 'Off'}</span>
+        </div>
+        <div class="device-hero">
+          <div class="hero-metric">
+            <label>Mode</label>
+            <strong>${dashboardModeLabel(state?.mode)}</strong>
+          </div>
+          <div class="hero-metric">
+            <label>Setpoint</label>
+            <strong>${dashboardTempLabel(state?.setpoint)}</strong>
+          </div>
+        </div>
+        <div class="device-meta">
+          <div class="device-meta-item"><label>Current Temp</label><span>${dashboardTempLabel(state?.current_temp)}</span></div>
+          <div class="device-meta-item"><label>Fan</label><span>${dashboardModeLabel(state?.fan)}</span></div>
+          <div class="device-meta-item"><label>Emitter</label><span>${h.emitter}</span></div>
+          <div class="device-meta-item"><label>Light</label><span>${state?.light || '-'}</span></div>
+          <div class="device-meta-item"><label>Temp Source</label><span>${h.current_temp_source || 'setpoint'}</span></div>
+          <div class="device-meta-item"><label>Summary</label><span>${summary}</span></div>
+        </div>
+        <div class="device-controls">
+          <div class="control-field">
+            <label>Power</label>
+            <select data-hvac-control="power" data-hvac-id="${h.id}">
+              ${optHtml(['on','off'], v => v, v => v, powerOn ? 'on' : 'off')}
+            </select>
+          </div>
+          <div class="control-field">
+            <label>Mode</label>
+            <select data-hvac-control="mode" data-hvac-id="${h.id}">
+              ${optHtml(['auto','cool','heat','dry','fan'], v => v, v => v, mode)}
+            </select>
+          </div>
+          <div class="control-field">
+            <label>Setpoint</label>
+            <input data-hvac-control="temp" data-hvac-id="${h.id}" type="number" min="16" max="30" step="1" value="${Math.round(setpoint)}">
+          </div>
+          <div class="control-field">
+            <label>Fan</label>
+            <select data-hvac-control="fan" data-hvac-id="${h.id}">
+              ${optHtml(['auto','low','medium','high'], v => v, v => v, fan)}
+            </select>
+          </div>
+          <div class="control-field">
+            <label>Light</label>
+            <select data-hvac-control="light" data-hvac-id="${h.id}">
+              ${optHtml([{v:'',l:'default'},{v:'true',l:'on'},{v:'false',l:'off'}], v => v.v, v => v.l, light)}
+            </select>
+          </div>
+        </div>
+        <div class="device-card-footer">
+          <span class="card-note">Model ${h.model}</span>
+          <div class="device-actions">
+            <span class="dashboard-inline-status" id="dash_status_${h.id}"></span>
+            <button type="button" class="btn-sm apply-btn" data-apply-hvac="${h.id}">Apply</button>
+            <a class="btn-danger" href="/devices?tab=edit" onclick="queueEditIndex(${index})">Edit</a>
+          </div>
+        </div>
+      </article>`;
+    }
+    function renderDashboard() {
+      const rows = (cfg.hvacs || []).map((h, i) => ({ h, i })).filter(({ h }) => h?.protocol !== 'CUSTOM');
+      byId('dashboard_grid').innerHTML = rows.length
+        ? rows.map(({ h, i }) => dashboardCardHtml(h, i)).join('')
+        : '<div class="status">No standard HVAC device profiles available for the dashboard.</div>';
+      byId('status_dashboard').textContent = `Dashboard: ${rows.length} HVAC card(s).`;
+    }
+    async function loadDashboardStates() {
+      try {
+        const states = await J('/api/device/get_all');
+        const nextMap = {};
+        const items = Array.isArray(states?.states) ? states.states : Array.isArray(states) ? states : [];
+        items.forEach(item => {
+          if (item?.id != null) nextMap[String(item.id)] = item;
+        });
+        hvacStateMap = nextMap;
+      } catch (_err) {
+        hvacStateMap = {};
+      }
+    }
+    function stopDashboardPolling() {
+      if (dashboardPollTimer !== null) {
+        clearInterval(dashboardPollTimer);
+        dashboardPollTimer = null;
+      }
+    }
+    function syncDashboardPolling() {
+      stopDashboardPolling();
+      if (activeTab !== 'dashboard' || document.hidden) return;
+      dashboardPollTimer = setInterval(async () => {
+        await loadDashboardStates();
+        renderDashboard();
+      }, 5000);
+    }
+    window.queueEditIndex = function(index) {
+      sessionStorage.setItem('devices_edit_index', String(index));
+    };
+    async function applyDashboardControls(hvacId) {
+      const id = String(hvacId || '');
+      const btn = document.querySelector(`[data-apply-hvac="${id}"]`);
+      const statusEl = byId(`dash_status_${id}`);
+      const getValue = name => document.querySelector(`[data-hvac-control="${name}"][data-hvac-id="${id}"]`)?.value;
+      if (!id || !btn) return;
+      const state = hvacStateMap[id] || {};
+      const body = new URLSearchParams({
+        id,
+        power: getValue('power') || (String(state?.power || 'on').toLowerCase() === 'off' ? 'off' : 'on'),
+        mode: getValue('mode') || 'auto',
+        temp: getValue('temp') || String(Math.round(Number(state?.setpoint) || 24)),
+        fan: getValue('fan') || 'auto'
+      });
+      const light = getValue('light');
+      if (light !== '') body.set('light', light);
+      btn.disabled = true;
+      if (statusEl) statusEl.textContent = 'Applying...';
+      try {
+        const res = await fetch('/api/device/send', { method: 'POST', body });
+        const data = await res.json();
+        if (data?.ok === false) throw new Error(data.error || 'send_failed');
+        await loadDashboardStates();
+        renderDashboard();
+        if (byId(`dash_status_${id}`)) byId(`dash_status_${id}`).textContent = 'Saved';
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'Failed';
+      } finally {
+        const nextBtn = document.querySelector(`[data-apply-hvac="${id}"]`);
+        if (nextBtn) nextBtn.disabled = false;
+      }
     }
     function usedCommandCount(items) {
       const count = (items || []).filter(c => c && (c.name || c.code)).length;
@@ -886,10 +1210,12 @@
     });
     async function reloadData() {
       [cfg, meta, status] = await Promise.all([J('/api/config'), J('/api/meta'), J('/api/status')]);
+      await loadDashboardStates();
     }
     async function refreshPage(keepTab = activeTab) {
       await reloadData();
       renderHvacTable();
+      renderDashboard();
       renderEmitterTable();
       renderAddForm();
       renderClone();
@@ -950,6 +1276,11 @@
         return;
       }
       byId('edit_index').innerHTML = hvacs.map((h, i) => `<option value="${i}">${h.id} (${h.protocol}${hvacProfileName(h) ? ' - ' + hvacProfileName(h) : ''})</option>`).join('');
+      const queued = Number(sessionStorage.getItem('devices_edit_index'));
+      if (Number.isInteger(queued) && queued >= 0 && queued < hvacs.length) {
+        byId('edit_index').value = String(queued);
+        sessionStorage.removeItem('devices_edit_index');
+      }
       syncEdit();
     }
     function syncEdit() {
@@ -1031,6 +1362,12 @@
         byId('raw_response').textContent = 'Error: ' + err;
       }
     });
+    document.addEventListener('visibilitychange', syncDashboardPolling);
+    document.addEventListener('click', evt => {
+      const btn = evt.target.closest('[data-apply-hvac]');
+      if (!btn) return;
+      applyDashboardControls(btn.dataset.applyHvac);
+    });
     byId('add_emitter_form').addEventListener('submit', async e => {
       e.preventDefault();
       byId('status_emitters').textContent = 'Adding emitter...';
@@ -1044,7 +1381,7 @@
     });
 
     async function init() {
-      const validTabs = new Set(['list', 'emitters', 'add', 'edit', 'test']);
+      const validTabs = new Set(['list', 'dashboard', 'emitters', 'add', 'edit', 'test']);
       const queryTab = new URLSearchParams(window.location.search).get('tab');
       if (queryTab && validTabs.has(queryTab)) activeTab = queryTab;
       await refreshPage(activeTab);

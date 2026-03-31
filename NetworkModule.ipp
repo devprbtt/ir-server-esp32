@@ -175,7 +175,6 @@ void handleApiStatus() {
   doc["eth_last_link_up_ms"] = ethernetLastLinkUpMs;
   doc["wifi_mode_raw"] = static_cast<int>(wifiMode);
   doc["wifi_rssi"] = WiFi.isConnected() ? WiFi.RSSI() : 0;
-  doc["monitor_logging_enabled"] = telnetMonitorEnabled;
   doc["time_synced"] = clockHasValidTime();
   doc["local_time"] = localTimeString();
   String out;
@@ -223,7 +222,6 @@ void handleApiMeta() {
   doc["max_dinplug_bindings_total"] = kMaxDinplugBindingsTotal;
   doc["dinplug_bindings_used"] = dinplugBindingCount;
   doc["dinplug_bindings_available"] = kMaxDinplugBindingsTotal - dinplugBindingCount;
-  doc["monitor_logging_enabled"] = telnetMonitorEnabled;
   doc["max_temp_sensors"] = kMaxTempSensors;
   doc["max_emitters"] = kMaxEmitters;
   doc["max_hvacs"] = kMaxHvacs;
@@ -318,13 +316,11 @@ void handleNetworkEvent(WiFiEvent_t event) {
       ethernetLastLinkUpMs = millis();
       Serial.print("eth: event got ip=");
       Serial.println(ETH.localIP());
-      if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("eth: got ip=" + ETH.localIP().toString());
       stopWifiForEthernet();
       startMdns();
       break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
       Serial.println("eth: event disconnected");
-      if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("eth: disconnected");
       ethernetUp = false;
       if (config.wifi.ssid.length() > 0) {
         WiFi.disconnect(false, false);
@@ -531,22 +527,18 @@ void handleNetworkRecovery() {
     wifiFallbackPending = false;
     Serial.print("wifi: reconnected IP=");
     Serial.println(WiFi.localIP());
-    if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("wifi: reconnected ip=" + WiFi.localIP().toString());
     if (!ethReady) startMdns();
   } else if (WiFi.getMode() == WIFI_STA && wifiStatus != WL_CONNECTED && lastWifiStatus == WL_CONNECTED) {
     Serial.print("wifi: disconnected status=");
     Serial.println(static_cast<int>(wifiStatus));
-    if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("wifi: disconnected status=" + String(static_cast<int>(wifiStatus)));
   }
   lastWifiStatus = wifiStatus;
 
   if (ethReady && !lastEthReady) {
     Serial.print("eth: active IP=");
     Serial.println(ETH.localIP());
-    if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("eth: active ip=" + ETH.localIP().toString());
   } else if (!ethReady && lastEthReady) {
     Serial.println("eth: link lost");
-    if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("eth: link lost");
   }
   lastEthReady = ethReady;
 
@@ -570,7 +562,6 @@ void handleNetworkRecovery() {
 
   Serial.print("wifi: attempting recovery status=");
   Serial.println(static_cast<int>(wifiStatus));
-  if (telnetMonitorEnabled && monitorLogStateEnabled) addMonitorLogEntry("wifi: attempting recovery status=" + String(static_cast<int>(wifiStatus)));
 
   WiFi.disconnect(false, false);
   beginWifiStationConnection();

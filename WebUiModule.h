@@ -22,7 +22,6 @@ void handleConfigUploadPage();
 void handleConfigUpload();
 void handleConfigUploadDone();
 void handleApiConfig();
-void handleMonitorPage();
 bool isApPortalMode();
 String captivePortalUrl();
 void sendPortalRedirect();

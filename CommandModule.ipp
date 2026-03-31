@@ -103,7 +103,6 @@ bool processCommand(JsonDocument &doc, JsonDocument &resp, int8_t sourceTelnetSl
     resp["trend_samples_count"] = trendHistoryCount;
     resp["trend_sample_interval_sec"] = (kTrendSampleIntervalMs / 1000UL);
     resp["wifi_rssi"] = WiFi.isConnected() ? WiFi.RSSI() : 0;
-    resp["monitor_logging_enabled"] = telnetMonitorEnabled;
     resp["time_synced"] = clockHasValidTime();
     resp["local_time"] = localTimeString();
     return true;

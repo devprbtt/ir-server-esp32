@@ -1,92 +1,3 @@
-void printMonitorStatus() {
-  Serial.print("monitor: telnet ");
-  Serial.println(telnetMonitorEnabled ? "on" : "off");
-}
-
-bool monitorCategoryEnabled(const String &categoryIn) {
-  String category = categoryIn;
-  category.toLowerCase();
-  if (category == "telnet") return monitorLogTelnetEnabled;
-  if (category == "state") return monitorLogStateEnabled;
-  if (category == "dinplug") return monitorLogDinplugEnabled;
-  if (category == "ir") return monitorLogIrEnabled;
-  return true;
-}
-
-void addMonitorLogEntry(const String &line) {
-  String entry;
-  String clockText = localTimeString();
-  if (clockText.length()) {
-    entry = "[" + clockText + "] [" + String(millis()) + " ms] ";
-  } else {
-    entry = "[" + String(millis()) + " ms] ";
-  }
-  entry += line;
-  if (telnetMonitorLogCount < kMonitorLogCapacity) {
-    uint16_t idx = (telnetMonitorLogStart + telnetMonitorLogCount) % kMonitorLogCapacity;
-    telnetMonitorLog[idx] = entry;
-    telnetMonitorLogCount++;
-    return;
-  }
-  telnetMonitorLog[telnetMonitorLogStart] = entry;
-  telnetMonitorLogStart = (telnetMonitorLogStart + 1) % kMonitorLogCapacity;
-}
-
-void clearMonitorLog() {
-  telnetMonitorLogStart = 0;
-  telnetMonitorLogCount = 0;
-}
-
-void handleConsoleCommand(const String &line) {
-  String cmd = line;
-  cmd.trim();
-  cmd.toLowerCase();
-  if (!cmd.length()) return;
-
-  if (cmd == "monitor on" || cmd == "telnet monitor on") {
-    telnetMonitorEnabled = true;
-    printMonitorStatus();
-    return;
-  }
-  if (cmd == "monitor off" || cmd == "telnet monitor off") {
-    telnetMonitorEnabled = false;
-    printMonitorStatus();
-    return;
-  }
-  if (cmd == "monitor status" || cmd == "telnet monitor status") {
-    printMonitorStatus();
-    return;
-  }
-  if (cmd == "monitor help" || cmd == "help") {
-    Serial.println("monitor commands:");
-    Serial.println("  monitor on");
-    Serial.println("  monitor off");
-    Serial.println("  monitor status");
-    return;
-  }
-  Serial.print("monitor: unknown command: ");
-  Serial.println(line);
-}
-
-void handleSerialConsole() {
-  while (Serial.available()) {
-    char ch = static_cast<char>(Serial.read());
-    if (ch == '\r') continue;
-    if (ch == '\n') {
-      if (serialConsoleBuffer.length()) {
-        handleConsoleCommand(serialConsoleBuffer);
-        serialConsoleBuffer = "";
-      }
-      continue;
-    }
-    serialConsoleBuffer += ch;
-    if (serialConsoleBuffer.length() > 200) {
-      serialConsoleBuffer = "";
-      Serial.println("monitor: command too long, cleared");
-    }
-  }
-}
-
 void markDiagnosticsDirty() {
   diagnosticsDirty = true;
   diagnosticsDirtySinceMs = millis();
@@ -162,15 +73,6 @@ void savePersistedDiagnostics() {
     tc["port"] = c.remotePort();
   }
 
-  JsonArray lines = doc["recent_lines"].to<JsonArray>();
-  uint16_t limit = kDiagnosticsLogLines;
-  if (limit > telnetMonitorLogCount) limit = telnetMonitorLogCount;
-  uint16_t startOffset = telnetMonitorLogCount - limit;
-  for (uint16_t i = startOffset; i < telnetMonitorLogCount; i++) {
-    uint16_t idx = (telnetMonitorLogStart + i) % kMonitorLogCapacity;
-    lines.add(telnetMonitorLog[idx]);
-  }
-
   JsonArray trends = doc["trend_samples"].to<JsonArray>();
   for (uint8_t i = 0; i < trendHistoryCount; i++) {
     uint8_t idx = (trendHistoryStart + i) % kTrendHistoryCapacity;
@@ -182,7 +84,6 @@ void savePersistedDiagnostics() {
     t["wifi_rssi"] = trendHistory[idx].wifiRssi;
     t["telnet_clients_active"] = trendHistory[idx].telnetClients;
   }
-  doc["monitor_logging_enabled"] = telnetMonitorEnabled;
 
   File f = SPIFFS.open(kDiagnosticsPath, FILE_WRITE);
   if (!f) {
@@ -201,35 +102,6 @@ void handleDiagnosticsPersistence() {
   savePersistedDiagnostics();
 }
 
-void handleApiMonitor() {
-  if (!checkAuth()) { requestAuth(); return; }
-  uint16_t limit = kMonitorLogCapacity;
-  if (web.hasArg("limit")) {
-    long requested = web.arg("limit").toInt();
-    if (requested > 0) {
-      limit = (uint16_t)requested;
-      if (limit > kMonitorLogCapacity) limit = kMonitorLogCapacity;
-    }
-  }
-  if (limit > telnetMonitorLogCount) limit = telnetMonitorLogCount;
-  JsonDocument doc;
-  doc["enabled"] = telnetMonitorEnabled;
-  JsonObject filters = doc["filters"].to<JsonObject>();
-  filters["telnet"] = monitorLogTelnetEnabled;
-  filters["state"] = monitorLogStateEnabled;
-  filters["dinplug"] = monitorLogDinplugEnabled;
-  filters["ir"] = monitorLogIrEnabled;
-  JsonArray lines = doc["lines"].to<JsonArray>();
-  uint16_t startOffset = telnetMonitorLogCount - limit;
-  for (uint16_t i = startOffset; i < telnetMonitorLogCount; i++) {
-    uint16_t idx = (telnetMonitorLogStart + i) % kMonitorLogCapacity;
-    lines.add(telnetMonitorLog[idx]);
-  }
-  String out;
-  serializeJson(doc, out);
-  web.send(200, "application/json", out);
-}
-
 void handleApiDiagnostics() {
   if (!checkAuth()) { requestAuth(); return; }
   if (!SPIFFS.exists(kDiagnosticsPath)) {
@@ -246,53 +118,4 @@ void handleApiDiagnostics() {
   }
   web.streamFile(f, "application/json");
   f.close();
-}
-
-void handleMonitorClear() {
-  if (!checkAuth()) { requestAuth(); return; }
-  clearMonitorLog();
-  JsonDocument doc;
-  doc["ok"] = true;
-  String out;
-  serializeJson(doc, out);
-  web.send(200, "application/json", out);
-}
-
-void handleMonitorToggle() {
-  if (!checkAuth()) { requestAuth(); return; }
-  String enabled = web.arg("enabled");
-  enabled.toLowerCase();
-  telnetMonitorEnabled = (enabled == "1" || enabled == "true" || enabled == "on");
-  if (web.hasArg("telnet")) {
-    String value = web.arg("telnet");
-    value.toLowerCase();
-    monitorLogTelnetEnabled = (value == "1" || value == "true" || value == "on");
-  }
-  if (web.hasArg("state")) {
-    String value = web.arg("state");
-    value.toLowerCase();
-    monitorLogStateEnabled = (value == "1" || value == "true" || value == "on");
-  }
-  if (web.hasArg("dinplug")) {
-    String value = web.arg("dinplug");
-    value.toLowerCase();
-    monitorLogDinplugEnabled = (value == "1" || value == "true" || value == "on");
-  }
-  if (web.hasArg("ir")) {
-    String value = web.arg("ir");
-    value.toLowerCase();
-    monitorLogIrEnabled = (value == "1" || value == "true" || value == "on");
-  }
-  printMonitorStatus();
-  JsonDocument doc;
-  doc["ok"] = true;
-  doc["enabled"] = telnetMonitorEnabled;
-  JsonObject filters = doc["filters"].to<JsonObject>();
-  filters["telnet"] = monitorLogTelnetEnabled;
-  filters["state"] = monitorLogStateEnabled;
-  filters["dinplug"] = monitorLogDinplugEnabled;
-  filters["ir"] = monitorLogIrEnabled;
-  String out;
-  serializeJson(doc, out);
-  web.send(200, "application/json", out);
 }
