@@ -49,8 +49,8 @@ static const uint8_t kDiagnosticsLogLines = 20;
 static const unsigned long kDiagnosticsPersistDebounceMs = 10000UL;
 static const uint8_t kTrendHistoryCapacity = 24;
 static const unsigned long kTrendSampleIntervalMs = 60000UL;
-static const char *kFirmwareVersion = "0.4.1";
-static const char *kFilesystemVersionExpected = "0.4.1";
+static const char *kFirmwareVersion = "0.4.2";
+static const char *kFilesystemVersionExpected = "0.4.2";
 
 static const char *kConfigPath = "/config.json";
 static const char *kHvacStatePath = "/hvac_state.json";

@@ -275,33 +275,26 @@ void handleConfigSave() {
   config.telnetPort = port;
   saveConfig();
   Serial.println("web: config saved, rebooting");
-
-  String mdnsUrl = "http://" + htmlEscape(config.hostname.length() ? config.hostname : kDefaultHostname) + ".local/";
-  String staticIpUrl = "";
-  if (!config.eth.enabled && config.wifi.ssid.length() > 0 && !config.wifi.dhcp && config.wifi.ip != IPAddress()) {
-    staticIpUrl = "http://" + config.wifi.ip.toString() + "/";
+  String preferredUrl = "";
+  if (isApPortalMode()) {
+    preferredUrl = probeWifiConfigRedirectUrl(
+      config.wifi.ssid,
+      config.wifi.password,
+      config.wifi.dhcp,
+      config.wifi.ip,
+      config.wifi.gateway,
+      config.wifi.subnet,
+      config.wifi.dns,
+      config.hostname,
+      10000
+    );
+  } else if (networkLocalIp() != IPAddress()) {
+    preferredUrl = "http://" + networkLocalIp().toString() + "/";
   }
-  String rebootHtml = "<!doctype html><html><head><meta charset='utf-8'><title>Rebooting</title>";
-  rebootHtml += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-  rebootHtml += "<style>body{font-family:Arial,sans-serif;padding:24px;max-width:720px;margin:auto;}code{background:#f1f5f9;padding:2px 6px;border-radius:6px;}a{word-break:break-all;}</style>";
-  rebootHtml += "</head><body><h2>Saved. Rebooting device...</h2>";
-  rebootHtml += "<p>This page will try to reconnect automatically.</p>";
-  rebootHtml += "<p>Fallback links:</p><ul>";
-  rebootHtml += "<li><a href='" + mdnsUrl + "'>" + mdnsUrl + "</a></li>";
-  if (staticIpUrl.length()) rebootHtml += "<li><a href='" + staticIpUrl + "'>" + staticIpUrl + "</a></li>";
-  rebootHtml += "<li><a href='http://192.168.4.1/'>http://192.168.4.1/</a></li></ul>";
-  rebootHtml += "<script>";
-  rebootHtml += "const targets=[];";
-  rebootHtml += "if(location&&location.origin) targets.push(location.origin+'/');";
-  rebootHtml += "targets.push('" + mdnsUrl + "');";
-  if (staticIpUrl.length()) rebootHtml += "targets.push('" + staticIpUrl + "');";
-  rebootHtml += "targets.push('http://192.168.4.1/');";
-  rebootHtml += "let i=0;const tryNext=()=>{if(!targets.length)return;location.href=targets[i%targets.length];i++;setTimeout(tryNext,3500);};";
-  rebootHtml += "setTimeout(tryNext,2200);";
-  rebootHtml += "</script></body></html>";
   web.sendHeader("Cache-Control", "no-store");
   web.sendHeader("Connection", "close");
-  web.send(200, "text/html", rebootHtml);
+  sendReconnectPage("Rebooting", "Saved. Rebooting device...",
+                    "Trying to reconnect and redirect to the main page.", preferredUrl, true, 200);
   delay(1200);
   ESP.restart();
 }
@@ -631,7 +624,8 @@ void handleConfigUploadDone() {
   configUploadBuffer = "";
   rebuildEmitters();
   Serial.println("web: upload applied, rebooting");
-  web.send(200, "text/html", "<html><body><p>Uploaded. Rebooting...</p></body></html>");
+  sendReconnectPage("Config Upload", "Uploaded. Rebooting...",
+                    "Trying to reconnect and redirect to the main page.", "", true, 200);
   delay(500);
   ESP.restart();
 }
@@ -660,12 +654,56 @@ void handleApiConfigSave() {
     return;
   }
 
+  if (!loadConfigFromJson(body, true)) {
+    web.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_config\"}");
+    return;
+  }
+
   if (!saveConfigJson(body)) {
     web.send(500, "application/json", "{\"ok\":false,\"error\":\"config_write_failed\"}");
     return;
   }
 
-  web.send(200, "application/json", "{\"ok\":true,\"rebooting\":true}");
+  String redirectUrl = "";
+  wl_status_t wifiProbeStatus = WL_IDLE_STATUS;
+  bool wifiProbeAttempted = false;
+  if (isApPortalMode()) {
+    wifiProbeAttempted = config.wifi.ssid.length() > 0;
+    redirectUrl = probeWifiConfigRedirectUrl(
+      config.wifi.ssid,
+      config.wifi.password,
+      config.wifi.dhcp,
+      config.wifi.ip,
+      config.wifi.gateway,
+      config.wifi.subnet,
+      config.wifi.dns,
+      config.hostname,
+      10000,
+      &wifiProbeStatus
+    );
+  } else if (networkLocalIp() != IPAddress()) {
+    redirectUrl = "http://" + networkLocalIp().toString() + "/";
+  }
+  bool wifiProbeFailed = wifiProbeAttempted && !redirectUrl.length() && wifiProbeStatus != WL_CONNECTED;
+  String hostnameUrl = "http://" + (config.hostname.length() ? config.hostname : String(kDefaultHostname)) + ".local/";
+  String out = "{\"ok\":true,\"rebooting\":true";
+  if (redirectUrl.length()) {
+    out += ",\"redirect_url\":\"";
+    out += redirectUrl;
+    out += "\"";
+  }
+  if (wifiProbeFailed) {
+    out += ",\"wifi_probe_failed\":true";
+    out += ",\"wifi_probe_status\":";
+    out += String(static_cast<int>(wifiProbeStatus));
+    out += ",\"wifi_probe_message\":\"Wi-Fi connection failed. Check the SSID and password. The device should return in setup AP mode.\"";
+  }
+  out += ",\"hostname_url\":\"";
+  out += hostnameUrl;
+  out += "\"";
+  out += ",\"ap_url\":\"http://192.168.4.1/\"";
+  out += "}";
+  web.send(200, "application/json", out);
   delay(300);
   ESP.restart();
 }

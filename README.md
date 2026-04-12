@@ -24,8 +24,8 @@ ESP32 IR bridge with:
 - `/config/download`: download current config JSON.
 
 ## Versioning
-- Current firmware version: `0.4.1`
-- Current filesystem/UI version: `0.4.1`
+- Current firmware version: `0.4.2`
+- Current filesystem/UI version: `0.4.2`
 - The firmware exposes:
   - `firmware_version`
   - `filesystem_version`

@@ -1,5 +1,3 @@
-window.IR_SERVER_UI_FS_VERSION = "0.4.0";
-
 (function () {
   function injectStyles() {
     if (document.getElementById('ir-version-banner-style')) return;
@@ -29,16 +27,32 @@ window.IR_SERVER_UI_FS_VERSION = "0.4.0";
     return el;
   }
 
+  async function getUiFilesystemVersion() {
+    if (window.IR_SERVER_UI_FS_VERSION && window.IR_SERVER_UI_FS_VERSION !== 'unknown') {
+      return window.IR_SERVER_UI_FS_VERSION;
+    }
+    try {
+      const res = await fetch('/version.json', { cache: 'no-store' });
+      if (!res.ok) return 'unknown';
+      const data = await res.json();
+      const version = data.filesystem_version || 'unknown';
+      window.IR_SERVER_UI_FS_VERSION = version;
+      return version;
+    } catch (_err) {
+      return 'unknown';
+    }
+  }
+
   async function checkVersions() {
     injectStyles();
     try {
+      const uiFs = await getUiFilesystemVersion();
       const res = await fetch('/api/status', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       const firmware = data.firmware_version || 'unknown';
       const fsCurrent = data.filesystem_version || 'unknown';
       const fsExpected = data.filesystem_version_expected || 'unknown';
-      const uiFs = window.IR_SERVER_UI_FS_VERSION || 'unknown';
       const mismatched = !data.version_match || uiFs !== fsExpected;
       if (!mismatched) return;
       const banner = ensureBanner();

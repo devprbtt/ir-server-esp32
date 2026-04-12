@@ -1,5 +1,118 @@
 static bool ethernetLinkReady();
 
+String probeWifiConfigRedirectUrl(const String &ssid, const String &password, bool dhcp,
+                                  const IPAddress &ip, const IPAddress &gateway,
+                                  const IPAddress &subnet, const IPAddress &dns,
+                                  const String &hostname, uint32_t timeoutMs,
+                                  wl_status_t *statusOut) {
+  if (statusOut) *statusOut = WL_IDLE_STATUS;
+  if (!ssid.length()) return "";
+
+  wifi_mode_t currentMode = WiFi.getMode();
+  if (currentMode == WIFI_AP || currentMode == WIFI_AP_STA) {
+    WiFi.mode(WIFI_AP_STA);
+  } else {
+    WiFi.mode(WIFI_STA);
+  }
+
+  WiFi.setHostname(hostname.length() ? hostname.c_str() : kDefaultHostname);
+  if (!dhcp) {
+    bool staticComplete = ip != IPAddress() && gateway != IPAddress() && subnet != IPAddress();
+    if (staticComplete) {
+      WiFi.config(ip, gateway, subnet, dns);
+    } else {
+      WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+    }
+  } else {
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  }
+
+  WiFi.disconnect(false, false);
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress()) {
+      if (statusOut) *statusOut = WL_CONNECTED;
+      String url = "http://" + WiFi.localIP().toString() + "/";
+      Serial.print("wifi: pre-reboot IP probe succeeded ");
+      Serial.println(url);
+      return url;
+    }
+    delay(100);
+  }
+
+  wl_status_t finalStatus = WiFi.status();
+  if (statusOut) *statusOut = finalStatus;
+  Serial.print("wifi: pre-reboot IP probe timed out, status=");
+  Serial.println(static_cast<int>(finalStatus));
+  return "";
+}
+
+void sendReconnectPage(const String &title, const String &headline, const String &message,
+                       const String &preferredUrl, bool includeApFallback, int statusCode) {
+  String mdnsUrl = "http://" + htmlEscape(config.hostname.length() ? config.hostname : kDefaultHostname) + ".local/";
+  String currentIpUrl = networkLocalIp() != IPAddress() ? ("http://" + networkLocalIp().toString() + "/") : "";
+  String staticIpUrl = (!config.eth.enabled && config.wifi.ssid.length() > 0 && !config.wifi.dhcp &&
+                         config.wifi.ip != IPAddress()) ? ("http://" + config.wifi.ip.toString() + "/") : "";
+
+  String targets = "location.origin + '/'";
+  auto addTarget = [&targets](const String &url) {
+    String cleaned = url;
+    cleaned.trim();
+    if (!cleaned.length()) return;
+    String normalized = cleaned.endsWith("/") ? cleaned : (cleaned + "/");
+    String needle = "'" + normalized + "'";
+    if (targets.indexOf(needle) >= 0) return;
+    targets += ",";
+    targets += needle;
+  };
+
+  addTarget(preferredUrl);
+  addTarget(currentIpUrl);
+  addTarget(mdnsUrl);
+  addTarget(staticIpUrl);
+  if (includeApFallback) addTarget("http://192.168.4.1/");
+
+  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<meta name='theme-color' content='#0a0e14'>";
+  html += "<title>" + htmlEscape(title) + "</title>";
+  html += "<style>";
+  html += "*,*::before,*::after{box-sizing:border-box;}";
+  html += ":root{--bg:#0a0e14;--surface:#131920;--surface-elevated:#1a2029;--border:#252d3a;--text:#f0f4f8;--text-muted:#7a8a9d;--primary:#3b82f6;--warning:#f59e0b;--radius:14px;--radius-sm:10px;}";
+  html += "body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased;}";
+  html += ".container{max-width:640px;margin:0 auto;padding:16px;}";
+  html += ".header{text-align:center;padding:24px 0 16px;}";
+  html += ".header h1{margin:0;font-size:1.4rem;font-weight:700;letter-spacing:-0.03em;}";
+  html += ".header p{margin:4px 0 0;color:var(--text-muted);font-size:.85rem;}";
+  html += ".card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;}";
+  html += ".title{margin:0 0 10px;font-size:1rem;font-weight:700;}";
+  html += ".notice{margin-top:12px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.28);border-radius:var(--radius-sm);padding:12px;color:#fde68a;}";
+  html += ".status{margin-top:12px;padding:12px;background:var(--surface-elevated);border-radius:var(--radius-sm);font-family:Consolas,monospace;font-size:.8rem;white-space:pre-wrap;}";
+  html += ".status-row{display:flex;align-items:center;gap:10px;}";
+  html += ".spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.18);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex:0 0 auto;}";
+  html += ".status-text{flex:1;min-width:0;}";
+  html += ".target{margin-top:10px;color:var(--text-muted);font-size:.82rem;word-break:break-all;}";
+  html += "code{background:var(--surface-elevated);border:1px solid var(--border);border-radius:8px;padding:2px 6px;color:var(--text);}";
+  html += "@keyframes spin{to{transform:rotate(360deg);}}";
+  html += "</style>";
+  html += "</head><body><div class='container'><header class='header'><h1>" + htmlEscape(title) + "</h1><p>Automatic reconnect in progress</p></header>";
+  html += "<div class='card'><h2 class='title'>" + htmlEscape(headline) + "</h2>";
+  html += "<p>" + htmlEscape(message) + "</p>";
+  html += "<div class='notice'>The page will keep trying to reconnect and redirect to the main page when the device is reachable again.</div>";
+  html += "<div class='status status-row'><span class='spinner'></span><span id='reconnect_status' class='status-text'>Waiting for device restart...</span></div>";
+  html += "<div id='reconnect_target' class='target'></div></div>";
+  html += "<script>";
+  html += "const targets=[" + targets + "];";
+  html += "const statusEl=document.getElementById('reconnect_status');";
+  html += "const targetEl=document.getElementById('reconnect_target');";
+  html += "async function probe(url){try{await fetch(url+'?_reconnect='+Date.now(),{mode:'no-cors',cache:'no-store'});return true;}catch(e){return false;}}";
+  html += "async function tryReconnect(){for(const url of targets){statusEl.textContent='Trying to reconnect...';targetEl.textContent='Trying '+url;if(await probe(url)){statusEl.textContent='Connection successful. Redirecting to the main page.';targetEl.textContent=url;setTimeout(function(){location.replace(url);},800);return;}}setTimeout(tryReconnect,3000);}";
+  html += "setTimeout(tryReconnect,2000);";
+  html += "</script></div></body></html>";
+  web.send(statusCode, "text/html", html);
+}
+
 void handleFirmwarePage() {
   sendSpiffsFallbackPage("System", "/system.html");
 }
@@ -7,22 +120,12 @@ void handleFirmwarePage() {
 void handleFirmwareUpdate() {
   if (!checkAuth()) { requestAuth(); return; }
   bool ok = !Update.hasError();
-  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Firmware Update</title>";
-  html += "<style>body{font-family:Arial,sans-serif;padding:24px;max-width:720px;margin:auto;}</style></head><body><h3>";
-  html += ok ? "Firmware updated. Rebooting..." : "Firmware update failed.";
-  html += "</h3>";
   if (ok) {
-    String mdnsUrl = "http://" + htmlEscape(config.hostname.length() ? config.hostname : kDefaultHostname) + ".local/";
-    html += "<p>Trying to reconnect automatically.</p>";
-    html += "<script>";
-    html += "const targets=[];if(location&&location.origin)targets.push(location.origin+'/');";
-    html += "targets.push('" + mdnsUrl + "');targets.push('http://192.168.4.1/');";
-    html += "let i=0;const tryOpen=()=>{location.href=targets[i%targets.length];i++;};";
-    html += "setTimeout(()=>{tryOpen();setInterval(tryOpen,3000);},2000);";
-    html += "</script>";
+    sendReconnectPage("Firmware Update", "Firmware updated. Rebooting...",
+                      "Trying to reconnect to the device after the firmware update.", "", true, 200);
+  } else {
+    web.send(500, "text/html", "<!doctype html><html><body><h3>Firmware update failed.</h3></body></html>");
   }
-  html += "</body></html>";
-  web.send(ok ? 200 : 500, "text/html", html);
   if (ok) {
     delay(500);
     ESP.restart();
@@ -56,11 +159,12 @@ void handleFirmwareUpload() {
 void handleFilesystemUpdate() {
   if (!checkAuth()) { requestAuth(); return; }
   bool ok = !Update.hasError();
-  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Filesystem Update</title>";
-  html += "<style>body{font-family:Arial,sans-serif;padding:24px;max-width:720px;margin:auto;}</style></head><body><h3>";
-  html += ok ? "Filesystem updated. Rebooting..." : "Filesystem update failed.";
-  html += "</h3></body></html>";
-  web.send(ok ? 200 : 500, "text/html", html);
+  if (ok) {
+    sendReconnectPage("Filesystem Update", "Filesystem updated. Rebooting...",
+                      "Trying to reconnect to the device after the SPIFFS update.", "", true, 200);
+  } else {
+    web.send(500, "text/html", "<!doctype html><html><body><h3>Filesystem update failed.</h3></body></html>");
+  }
   if (ok) {
     delay(500);
     ESP.restart();
@@ -95,14 +199,9 @@ void handleFactoryReset() {
   if (!checkAuth()) { requestAuth(); return; }
   Serial.println("system: factory reset requested");
   clearPersistedData();
-
-  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Factory Reset</title>";
-  html += "<style>body{font-family:Arial,sans-serif;padding:24px;max-width:720px;margin:auto;}a{word-break:break-all;}code{background:#f1f5f9;padding:2px 6px;border-radius:6px;}</style></head><body>";
-  html += "<h2>Factory reset complete. Rebooting...</h2>";
-  html += "<p>All saved settings and persisted HVAC state were erased.</p>";
-  html += "<p>After reboot the device should start in setup AP mode at <a href='http://192.168.4.1/'>http://192.168.4.1/</a>.</p>";
-  html += "<script>setTimeout(()=>{location.href='http://192.168.4.1/';},2500);</script></body></html>";
-  web.send(200, "text/html", html);
+  sendReconnectPage("Factory Reset", "Factory reset complete. Rebooting...",
+                    "All saved settings and persisted HVAC state were erased. The device should return in setup AP mode.",
+                    "http://192.168.4.1/", true, 200);
   delay(500);
   ESP.restart();
 }

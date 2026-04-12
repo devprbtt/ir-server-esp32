@@ -238,6 +238,51 @@
       font-size: 0.8rem;
       white-space: pre-wrap;
     }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-row .spinner {
+      flex: 0 0 auto;
+      display: none;
+    }
+    .status-row .spinner.active {
+      display: inline-block;
+    }
+    .status-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 300;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal {
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid rgba(239, 68, 68, 0.28);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+    }
+    .modal h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+    .modal p {
+      margin: 0 0 14px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
 
     @media (max-width: 520px) {
       .form-grid { grid-template-columns: 1fr; }
@@ -246,6 +291,7 @@
 </head>
 <body>
   <div class="container">
+    <form id="config_form" onsubmit="return false;">
     <header class="header">
       <h1>Configuration</h1>
       <p>Network, services, and integrations</p>
@@ -378,7 +424,19 @@
     <!-- SAVE BUTTON -->
     <div class="card">
       <button class="btn-primary" type="button" id="save_btn">Save Configuration and Reboot</button>
-      <div class="status" id="status" style="margin-top:12px;">Ready</div>
+      <div class="status status-row" style="margin-top:12px;">
+        <span id="reconnect_spinner" class="spinner"></span>
+        <span class="status-text" id="status">Ready</span>
+      </div>
+    </div>
+    </form>
+  </div>
+
+  <div id="wifi_fail_modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wifi_fail_title">
+      <h3 id="wifi_fail_title">Wi-Fi connection failed</h3>
+      <p id="wifi_fail_message">The device could not connect with the supplied Wi-Fi settings.</p>
+      <button class="btn-primary" type="button" id="wifi_fail_close">OK</button>
     </div>
   </div>
 
@@ -407,6 +465,36 @@
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     let config = null;
     let status = null;
+    let pendingPopupRedirect = '';
+
+    function normalizeUrl(url) {
+      if (!url) return '';
+      return /\/$/.test(url) ? url : `${url}/`;
+    }
+
+    function showWifiFailurePopup(message, redirectUrl = '') {
+      pendingPopupRedirect = normalizeUrl(redirectUrl);
+      byId('wifi_fail_message').textContent = message || 'The device could not connect with the supplied Wi-Fi settings. Check the SSID and password. The device should return in setup AP mode.';
+      byId('wifi_fail_modal').classList.add('active');
+      byId('wifi_fail_modal').setAttribute('aria-hidden', 'false');
+    }
+
+    function hideWifiFailurePopup() {
+      byId('wifi_fail_modal').classList.remove('active');
+      byId('wifi_fail_modal').setAttribute('aria-hidden', 'true');
+      const next = pendingPopupRedirect;
+      pendingPopupRedirect = '';
+      if (!next) return;
+      if (normalizeUrl(location.href) === next || normalizeUrl(location.origin + '/') === next) {
+        location.reload();
+      } else {
+        location.replace(next);
+      }
+    }
+
+    function setReconnectSpinner(active) {
+      byId('reconnect_spinner').classList.toggle('active', !!active);
+    }
 
     function fillLiveNetworkFields(force = false) {
       const live = {
@@ -524,14 +612,106 @@
 
     async function saveConfig() {
       saveForm();
+      setReconnectSpinner(true);
       byId('status').textContent = 'Saving configuration and rebooting...';
-      const res = await fetch('/api/config/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+      try {
+        const res = await fetch('/api/config/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        const raw = await res.text();
+        let payload = null;
+        try {
+          payload = JSON.parse(raw);
+        } catch (_err) {
+          setReconnectSpinner(false);
+          byId('status').textContent = raw || 'Saved. Device should reboot shortly.';
+          return;
+        }
+        if (!res.ok || !payload?.ok) {
+          setReconnectSpinner(false);
+          byId('status').textContent = 'Save failed: ' + (payload?.error || res.status);
+          return;
+        }
+        byId('status').textContent = 'Saved. Waiting for device to reconnect...';
+        startReconnectFlow(payload);
+      } catch (_err) {
+        byId('status').textContent = 'Connection dropped while saving. Assuming reboot started; trying to reconnect...';
+        startReconnectFlow({
+          ok: true,
+          rebooting: true,
+          hostname_url: `http://${(byId('hostname').value || 'ir-server').trim() || 'ir-server'}.local/`,
+          ap_url: 'http://192.168.4.1/'
+        });
+      }
+    }
+
+    function uniqUrls(urls) {
+      const seen = new Set();
+      return urls.filter(url => {
+        if (!url) return false;
+        const normalized = normalizeUrl(url);
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
       });
-      const text = await res.text();
-      byId('status').textContent = text || 'Saved. Device should reboot shortly.';
+    }
+
+    async function probeUrl(url) {
+      const base = normalizeUrl(url);
+      try {
+        await fetch(`${base}?_reconnect=${Date.now()}`, { mode: 'no-cors', cache: 'no-store' });
+        return true;
+      } catch (_err) {
+        return false;
+      }
+    }
+
+    function startReconnectFlow(payload) {
+      const apUrl = normalizeUrl(payload?.ap_url || 'http://192.168.4.1/');
+      const hostnameUrl = normalizeUrl(payload?.hostname_url || '');
+      const locationOrigin = normalizeUrl(location?.origin ? `${location.origin}/` : '');
+      const requestedSsid = String(byId('ssid')?.value || '').trim();
+      const targets = uniqUrls([
+        payload?.redirect_url,
+        hostnameUrl,
+        locationOrigin,
+        apUrl
+      ]);
+      if (payload?.redirect_url) {
+        byId('status').textContent = `Connected to Wi-Fi successfully. Device reported IP ${payload.redirect_url.replace(/^http:\/\//, '').replace(/\/$/, '')}. Waiting for reboot...`;
+      } else if (payload?.hostname_url) {
+        byId('status').textContent = `Wi-Fi settings saved. Waiting for the device to come back at ${payload.hostname_url}`;
+      }
+      let current = 0;
+      const tick = async () => {
+        if (!targets.length) return;
+        const target = targets[current % targets.length];
+        current += 1;
+        byId('status').textContent = `Trying ${target}`;
+        if (await probeUrl(target)) {
+          const normalizedTarget = normalizeUrl(target);
+          const returnedToAp = requestedSsid && !payload?.redirect_url && (
+            normalizedTarget === apUrl ||
+            (locationOrigin === apUrl && normalizedTarget === locationOrigin)
+          );
+          if (returnedToAp) {
+            setReconnectSpinner(false);
+            byId('status').textContent = 'Device returned in setup AP mode. The Wi-Fi connection failed.';
+            showWifiFailurePopup(
+              payload?.wifi_probe_message || 'The device could not connect with the supplied Wi-Fi settings. Check the SSID and password. The device is back in setup AP mode.',
+              target
+            );
+            return;
+          }
+          byId('status').textContent = `Connection successful. Redirecting to ${target}`;
+          setTimeout(() => location.replace(target), 800);
+          return;
+        }
+        setTimeout(tick, 3000);
+      };
+      setTimeout(tick, 2000);
     }
 
     function renderSensorRows(c, s) {
@@ -556,6 +736,10 @@
       loadForm(config);
       byId('dhcp').addEventListener('change', () => {
         if (!byId('dhcp').checked) fillLiveNetworkFields();
+      });
+      byId('wifi_fail_close').addEventListener('click', hideWifiFailurePopup);
+      byId('wifi_fail_modal').addEventListener('click', (e) => {
+        if (e.target === byId('wifi_fail_modal')) hideWifiFailurePopup();
       });
       byId('scan_btn').addEventListener('click', () => scanWifi().catch(e => byId('scan_feedback').textContent = 'Scan failed: ' + e));
       byId('ssid_scan').addEventListener('change', e => { if (e.target.value) byId('ssid').value = e.target.value; });
