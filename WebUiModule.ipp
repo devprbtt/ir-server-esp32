@@ -116,13 +116,60 @@ bool streamSpiffsFile(const char *path, const char *contentType) {
 
 void sendSpiffsFallbackPage(const String &title, const String &spiffsPath) {
   if (!checkAuth()) { requestAuth(); return; }
-  String html = pageHeader(title);
-  html += "<div class='card'><h2>" + htmlEscape(title) + "</h2>";
-  html += "<p>The web UI file <code>" + htmlEscape(spiffsPath) + "</code> is missing from SPIFFS.</p>";
-  html += "<p>Upload the latest <code>spiffs.bin</code> from the firmware build to restore this page.</p>";
-  html += "<p>The device services are still running. Only this route's embedded web UI is unavailable.</p>";
-  html += "</div>";
-  html += pageFooter();
+  String host = htmlEscape(config.hostname.length() ? config.hostname : kDefaultHostname);
+  String html = "<!doctype html><html><head><meta charset='utf-8'>";
+  html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>Recovery OTA</title>";
+  html += "<style>";
+  html += "body{font-family:Segoe UI,Tahoma,Arial,sans-serif;margin:0;background:#0f172a;color:#e2e8f0;}";
+  html += ".wrap{max-width:760px;margin:0 auto;padding:24px;}";
+  html += ".card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:16px;margin:12px 0;}";
+  html += "h1,h2,h3,p{margin:0 0 12px;}";
+  html += "input{width:100%;padding:10px;margin:8px 0;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px;box-sizing:border-box;}";
+  html += "button{background:#22c55e;border:0;color:#0b1220;font-weight:700;padding:10px 14px;border-radius:8px;cursor:pointer;}";
+  html += "button.secondary{background:#38bdf8;}";
+  html += "button:disabled{opacity:0.6;cursor:not-allowed;}";
+  html += "code{background:#0b1220;border:1px solid #334155;border-radius:8px;padding:2px 6px;}";
+  html += ".bar{height:10px;background:#0b1220;border:1px solid #334155;border-radius:999px;overflow:hidden;margin-top:10px;}";
+  html += ".fill{height:100%;width:0;}";
+  html += ".fw{background:#22c55e;}.fs{background:#38bdf8;}";
+  html += ".warn{background:#3f1d1d;border-color:#7f1d1d;color:#fecaca;}";
+  html += "</style></head><body><div class='wrap'>";
+  html += "<div class='card warn'><h1>Recovery OTA</h1>";
+  html += "<p>The SPIFFS UI file <code>" + htmlEscape(spiffsPath) + "</code> is missing, so the normal web interface is unavailable.</p>";
+  html += "<p>Upload <code>spiffs.bin</code> to restore the full UI. This page only provides OTA recovery.</p>";
+  html += "<p>Requested route: <strong>" + htmlEscape(title) + "</strong> | Device: <strong>" + host + ".local</strong> | IP: <strong>" +
+          htmlEscape(networkLocalIp().toString()) + "</strong></p></div>";
+
+  html += "<div class='card'><h2>Firmware Upload</h2>";
+  html += "<p>Use this to upload <code>firmware.bin</code>.</p>";
+  html += "<input id='fw_file' type='file' accept='.bin,application/octet-stream'>";
+  html += "<button type='button' id='fw_btn'>Upload Firmware</button>";
+  html += "<div class='bar'><div id='fw_bar' class='fill fw'></div></div>";
+  html += "<p id='fw_status'>Idle.</p></div>";
+
+  html += "<div class='card'><h2>SPIFFS Upload</h2>";
+  html += "<p>Use this to upload <code>spiffs.bin</code>. This is the file you need to restore the normal UI.</p>";
+  html += "<input id='fs_file' type='file' accept='.bin,application/octet-stream'>";
+  html += "<button type='button' class='secondary' id='fs_btn'>Upload SPIFFS</button>";
+  html += "<div class='bar'><div id='fs_bar' class='fill fs'></div></div>";
+  html += "<p id='fs_status'>Idle.</p></div>";
+
+  html += "<script>";
+  html += "function byId(id){return document.getElementById(id);}";
+  html += "function uploadBin(inputId,buttonId,url,barId,statusId,fieldName,label){";
+  html += "const input=byId(inputId);const file=input&&input.files&&input.files[0];";
+  html += "if(!file){byId(statusId).textContent='Select a .bin file first.';return;}";
+  html += "const btn=byId(buttonId);btn.disabled=true;byId(statusId).textContent='Uploading '+label+'...';byId(barId).style.width='0%';";
+  html += "const data=new FormData();data.append(fieldName,file,file.name);";
+  html += "const xhr=new XMLHttpRequest();xhr.open('POST',url,true);";
+  html += "xhr.upload.onprogress=function(ev){if(!ev.lengthComputable)return;byId(barId).style.width=Math.max(1,Math.round((ev.loaded/ev.total)*100))+'%';};";
+  html += "xhr.onerror=function(){btn.disabled=false;byId(statusId).textContent=label+' upload failed.';};";
+  html += "xhr.onload=function(){btn.disabled=false;if(xhr.status>=200&&xhr.status<300){byId(barId).style.width='100%';byId(statusId).textContent=label+' upload complete. Device should reboot.';}else{byId(statusId).textContent=label+' upload failed ('+xhr.status+').';}};";
+  html += "xhr.send(data);}";
+  html += "byId('fw_btn').addEventListener('click',function(){uploadBin('fw_file','fw_btn','/firmware/update','fw_bar','fw_status','firmware','Firmware');});";
+  html += "byId('fs_btn').addEventListener('click',function(){uploadBin('fs_file','fs_btn','/spiffs/update','fs_bar','fs_status','filesystem','SPIFFS');});";
+  html += "</script></div></body></html>";
   web.send(503, "text/html", html);
 }
 
