@@ -778,6 +778,9 @@ void setupWeb() {
   });
   web.on("/dinplug/save", HTTP_POST, handleDinplugSave);
   web.on("/dinplug/test", HTTP_POST, handleDinplugTest);
+  web.on("/api/dinplug/learn/start", HTTP_POST, handleDinplugLearnStart);
+  web.on("/api/dinplug/learn/poll", HTTP_GET, handleDinplugLearnPoll);
+  web.on("/api/dinplug/learn/cancel", HTTP_POST, handleDinplugLearnCancel);
   web.on("/raw/test", HTTP_POST, handleRawTest);
   web.on("/api/diagnostics", HTTP_GET, handleApiDiagnostics);
   web.on("/api/ir/learn/start", HTTP_POST, handleIrLearnStart);
