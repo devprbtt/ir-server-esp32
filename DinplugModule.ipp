@@ -238,6 +238,63 @@ void handleDinplugTest() {
   web.send(302, "text/plain", "");
 }
 
+void handleDinplugLearnStart() {
+  if (!checkAuth()) { requestAuth(); return; }
+  JsonDocument doc;
+  if (!dinplugClient.connected()) {
+    doc["ok"] = false;
+    doc["error"] = "dinplug_disconnected";
+  } else {
+    dinplugLearnActive = true;
+    dinplugLearnReady = false;
+    dinplugLearnKeypadId = 0;
+    dinplugLearnButtonId = 0;
+    dinplugLearnSuppressKeypadId = 0;
+    dinplugLearnSuppressButtonId = 0;
+    dinplugLearnStartMs = millis();
+    doc["ok"] = true;
+    doc["active"] = true;
+  }
+  String out;
+  serializeJson(doc, out);
+  web.send(200, "application/json", out);
+}
+
+void handleDinplugLearnPoll() {
+  if (!checkAuth()) { requestAuth(); return; }
+  if (dinplugLearnActive && (millis() - dinplugLearnStartMs) > kDinplugLearnTimeoutMs) {
+    dinplugLearnActive = false;
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["active"] = dinplugLearnActive;
+  doc["ready"] = dinplugLearnReady;
+  doc["elapsed_ms"] = millis() - dinplugLearnStartMs;
+  if (dinplugLearnReady) {
+    doc["keypad_id"] = dinplugLearnKeypadId;
+    doc["button_id"] = dinplugLearnButtonId;
+  } else if (!dinplugLearnActive) {
+    doc["error"] = "timeout";
+  }
+  String out;
+  serializeJson(doc, out);
+  web.send(200, "application/json", out);
+}
+
+void handleDinplugLearnCancel() {
+  if (!checkAuth()) { requestAuth(); return; }
+  dinplugLearnActive = false;
+  dinplugLearnReady = false;
+  dinplugLearnSuppressKeypadId = 0;
+  dinplugLearnSuppressButtonId = 0;
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["active"] = false;
+  String out;
+  serializeJson(doc, out);
+  web.send(200, "application/json", out);
+}
+
 bool sendDinplugCommand(const String &cmd) {
   if (!dinplugClient.connected()) return false;
   size_t written = dinplugClient.print(cmd + "\r\n");
@@ -309,11 +366,14 @@ void handleDinplugButtonEvent(uint16_t keypadId, uint16_t buttonId, const String
   bool isHold = (action == "HOLD");
   for (uint8_t i = 0; i < config.hvacCount; i++) {
     const HvacConfig &h = config.hvacs[i];
-    if (!hvacHasDinKeypad(h, keypadId)) continue;
     for (uint8_t b = 0; b < h.dinButtonCount; b++) {
       const DinplugButtonBinding *bind = getDinplugBinding(h, b);
       if (!bind || bind->buttonId != buttonId) continue;
-      if (bind->keypadId != 0 && bind->keypadId != keypadId) continue;
+      if (bind->keypadId != 0) {
+        if (bind->keypadId != keypadId) continue;
+      } else if (!hvacHasDinKeypad(h, keypadId)) {
+        continue;
+      }
       if (applyDinplugAction(i, *bind, isHold)) {
         Serial.print("dinplug: applied action to hvac ");
         Serial.println(h.id);
@@ -335,7 +395,26 @@ void processDinplugLine(const String &line) {
   action.toUpperCase();
   uint16_t keypadId = static_cast<uint16_t>(trimmed.substring(secondSpace + 1, thirdSpace).toInt());
   uint16_t buttonId = static_cast<uint16_t>(trimmed.substring(thirdSpace + 1).toInt());
+  if (dinplugLearnActive && (millis() - dinplugLearnStartMs) > kDinplugLearnTimeoutMs) {
+    dinplugLearnActive = false;
+  }
+  if (action == "RELEASE" && keypadId == dinplugLearnSuppressKeypadId &&
+      buttonId == dinplugLearnSuppressButtonId) {
+    dinplugLearnSuppressKeypadId = 0;
+    dinplugLearnSuppressButtonId = 0;
+    return;
+  }
   if (action == "PRESS" || action == "HOLD") {
+    if (dinplugLearnActive) {
+      dinplugLearnActive = false;
+      dinplugLearnReady = true;
+      dinplugLearnKeypadId = keypadId;
+      dinplugLearnButtonId = buttonId;
+      dinplugLearnSuppressKeypadId = keypadId;
+      dinplugLearnSuppressButtonId = buttonId;
+      return;
+    }
+    if (keypadId == dinplugLearnSuppressKeypadId && buttonId == dinplugLearnSuppressButtonId) return;
     handleDinplugButtonEvent(keypadId, buttonId, action);
   }
 }

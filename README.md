@@ -473,6 +473,18 @@ Examples:
 Cancel a learn session:
 - `POST /api/ir/learn/cancel`
 
+### DINplug button learn API
+Used by the device binding editor to identify a keypad and button from the next DINplug `PRESS` or `HOLD` event. The captured event is not dispatched to an existing binding.
+
+- `POST /api/dinplug/learn/start`: start a 10-second capture window.
+- `GET /api/dinplug/learn/poll`: poll until `ready` is true and read `keypad_id` and `button_id`.
+- `POST /api/dinplug/learn/cancel`: cancel the active capture.
+
+Example ready response:
+```json
+{"ok":true,"active":false,"ready":true,"elapsed_ms":1220,"keypad_id":108,"button_id":9}
+```
+
 ### Maintenance HTTP endpoints
 These are used by the web UI rather than third-party automation, but they are part of the device HTTP surface:
 
@@ -515,10 +527,11 @@ These are used by the web UI rather than third-party automation, but they are pa
 - Firmware/SPIFS updates do not wipe saved config by themselves; current settings remain unless you explicitly factory reset or erase flash.
 
 HVAC editor fields for DINplug:
-- `DINplug Keypad IDs (comma-separated)`: link one HVAC to one or more keypads.
+- `DINplug Keypad IDs (comma-separated)`: optionally link one HVAC to one or more keypads for binding rows whose `Keypad ID` is `0`.
 - `Add Binding`: add DINplug button mappings only where needed, up to the remaining global pool capacity shown in the UI.
+- `Learn Button`: capture the next DINplug keypad press and fill the binding row's keypad and button IDs automatically.
 - `Keypad Button Actions` table:
-  - `Keypad ID`: optional row filter (`0` means match any linked keypad).
+  - `Keypad ID`: explicit keypad match (`0` means match any keypad linked in `DINplug Keypad IDs`).
   - `Button ID`: button/LED ID from DINplug.
   - `Press Action` / `Hold Action` and matching value fields.
   - `Toggle Power Mode`: mode used when `toggle_power` turns HVAC on.

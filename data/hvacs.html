@@ -605,7 +605,7 @@
           <div class="form-grid cols-3" style="margin-top:12px;">
             <div class="field"><label>Temp Source</label><select name="current_temp_source" id="edit_temp_source"><option value="setpoint">setpoint</option><option value="sensor">sensor</option></select></div>
             <div class="field"><label>Temp Sensor</label><select name="temp_sensor_index" id="edit_temp_index"></select></div>
-            <div class="field"><label>DINplug Keypads</label><input name="din_keypad_ids" id="edit_keypads" placeholder="10,11"></div>
+            <div class="field"><label>Linked Keypads (optional)</label><input name="din_keypad_ids" id="edit_keypads" placeholder="For bindings with Keypad ID 0"></div>
           </div>
           <div id="edit_custom" class="subcard" style="display:none">
             <div class="subcard-title">Custom Commands</div>
@@ -1090,6 +1090,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
             <span style="font-size: 0.85rem; font-weight: 700; color: var(--text);">Binding #${i + 1}</span>
             <div style="display:flex;gap:8px;">
+              <button type="button" class="btn-sm btn-warning din-learn-btn">Learn Button</button>
               <button type="button" class="btn-sm btn-secondary" onclick="clearBindRow(this)">Clear</button>
               <button type="button" class="btn-sm btn-danger" ${removable ? '' : 'disabled'} onclick="removeBindRow(this)">Remove</button>
             </div>
@@ -1125,6 +1126,74 @@
     function bindField(row, name) {
       return row.querySelector(`[data-bind-field="${name}"]`);
     }
+    async function cancelDinplugLearn() {
+      try {
+        await fetch('/api/dinplug/learn/cancel', { method: 'POST' });
+      } catch (_err) {}
+    }
+    async function learnDinplugIntoRow(row) {
+      const keypadInput = bindField(row, 'keypad_id');
+      const buttonInput = bindField(row, 'id');
+      if (!keypadInput || !buttonInput) return;
+      const stopState = { cancelled: false };
+      activeLearnCancel = async () => {
+        stopState.cancelled = true;
+        await cancelDinplugLearn();
+        hideLearnOverlay();
+      };
+      showLearnOverlay();
+      setLearnOverlay(
+        'Learning DINplug Button',
+        'Press and release the keypad button you want to bind.',
+        'Waiting for a DINplug press or hold event. The event will be captured without executing its binding.',
+        '10s'
+      );
+      const startRes = await fetch('/api/dinplug/learn/start', { method: 'POST' });
+      const started = await startRes.json();
+      if (!started?.ok) {
+        hideLearnOverlay();
+        alert(started?.error === 'dinplug_disconnected'
+          ? 'DINplug learning is unavailable because the gateway is disconnected.'
+          : 'DINplug learning is unavailable.');
+        return;
+      }
+      const deadline = Date.now() + 10000;
+      let learned = null;
+      while (Date.now() < deadline) {
+        if (stopState.cancelled) return;
+        const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        setLearnOverlay(
+          'Learning DINplug Button',
+          'Press and release the keypad button you want to bind.',
+          'Waiting for a DINplug press or hold event. The event will be captured without executing its binding.',
+          `${secondsLeft}s`
+        );
+        const pollRes = await fetch('/api/dinplug/learn/poll');
+        const data = await pollRes.json();
+        if (data?.ready || data?.error) { learned = data; break; }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      hideLearnOverlay();
+      if (!learned?.ready) {
+        await cancelDinplugLearn();
+        alert('No DINplug button was detected within 10 seconds.');
+        return;
+      }
+      keypadInput.value = String(learned.keypad_id || '');
+      buttonInput.value = String(learned.button_id || '');
+      syncBindRow(row);
+    }
+    document.addEventListener('click', evt => {
+      const btn = evt.target.closest('.din-learn-btn');
+      if (!btn) return;
+      const row = btn.closest('.bind-group');
+      if (!row) return;
+      learnDinplugIntoRow(row).catch(err => {
+        hideLearnOverlay();
+        cancelDinplugLearn();
+        alert('DINplug learn failed: ' + err.message);
+      });
+    });
     function collectBindingRows() {
       return Array.from(document.querySelectorAll('#button_rows .bind-group')).map(row => ({
         keypad_id: Number(bindField(row, 'keypad_id')?.value || 0),
